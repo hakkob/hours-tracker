@@ -249,6 +249,12 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,14,17,0.93);backdrop-fi
 @keyframes spin{to{transform:rotate(360deg);}}
 .loading-text{font-size:0.8rem;color:var(--muted);}
 
+/* Blank-but-addable calendar days (past/today with no data) */
+.cal-day.addable{cursor:pointer;}
+.cal-day.addable:hover{border-color:var(--border);opacity:0.75;}
+.cal-add-hint{display:flex;align-items:center;justify-content:center;height:44px;font-size:1.1rem;color:var(--muted);opacity:0.3;}
+
+
 @media(max-width:640px){
   .hour-grid{grid-template-columns:repeat(12,1fr);}
   .hour-cell{min-height:52px;}
@@ -1017,8 +1023,10 @@ function renderCalendar(){
     const entry=getEntry(ds);
     const isToday=today.getFullYear()===calYear&&today.getMonth()===calMonth&&today.getDate()===d;
     const hasData=entry&&entry.hours.some(h=>h!==null);
+    const isFuture=new Date(ds+'T00:00:00')>today;
+    const isAddable=!hasData&&!isFuture;
     const cell=document.createElement('div');
-    cell.className='cal-day'+(isToday?' today-marker':'')+(hasData?' has-entry':'');
+    cell.className='cal-day'+(isToday?' today-marker':'')+(hasData?' has-entry':'')+(isAddable?' addable':'');
     const top=document.createElement('div');top.className='cal-day-top';
     top.innerHTML=`<span class="cal-day-num">${d}</span>`;
     if(hasData&&entry.comment){const dot=document.createElement('div');dot.className='cal-note-dot';top.appendChild(dot);}
@@ -1038,6 +1046,10 @@ function renderCalendar(){
       }
       cell.appendChild(bw);
       cell.onclick=()=>openDayModal(ds);
+    } else if(isAddable){
+      const hint=document.createElement('div');hint.className='cal-add-hint';hint.textContent='+';
+      cell.appendChild(hint);
+      cell.onclick=()=>openDayModal(ds);
     }
     grid.appendChild(cell);
   }
@@ -1047,17 +1059,20 @@ function renderCalendar(){
 //  DAY MODAL — VIEW MODE
 // ═══════════════════════════════════════════════════════════
 function openDayModal(ds){
-  const entry=getEntry(ds);if(!entry)return;
+  const entry=getEntry(ds);
   editingDate=ds;
-
-  // Always start in view mode
-  setModalViewMode();
 
   const d=new Date(ds+'T00:00:00');
   document.getElementById('dm-date').textContent=`${DAY_NAMES[d.getDay()]} · ${MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-
-  renderModalViewContent(entry);
   document.getElementById('day-modal-overlay').style.display='flex';
+
+  if(!entry||!entry.hours.some(h=>h!==null)){
+    // Blank or missing day — skip view mode, go straight to edit
+    enterEditMode();
+  } else {
+    setModalViewMode();
+    renderModalViewContent(entry);
+  }
 }
 
 function renderModalViewContent(entry){
@@ -1116,13 +1131,12 @@ function toggleEditMode(){
 function enterEditMode(){
   if(!editingDate) return;
   const entry=getEntry(editingDate);
-  if(!entry) return;
 
-  // Copy entry data into edit state
-  editHours=[...entry.hours];
-  document.getElementById('dm-input-spent').value=entry.spent??'';
-  document.getElementById('dm-input-kg').value=entry.kg??'';
-  document.getElementById('dm-input-comment').value=entry.comment??'';
+  // Use entry data or blank defaults for missing days
+  editHours=entry?[...entry.hours]:new Array(24).fill(null);
+  document.getElementById('dm-input-spent').value=entry?.spent??'';
+  document.getElementById('dm-input-kg').value=entry?.kg??'';
+  document.getElementById('dm-input-comment').value=entry?.comment??'';
 
   renderEditHourGrid();
   setModalEditMode();
@@ -1133,7 +1147,13 @@ function enterEditMode(){
 }
 
 function cancelEdit(){
-  setModalViewMode();
+  const entry=getEntry(editingDate);
+  if(!entry||!entry.hours.some(h=>h!==null)){
+    // Was a blank/unsaved day — just close
+    closeModal();
+  } else {
+    setModalViewMode();
+  }
   picker.classList.remove('open');
   pickerHour=null;
 }
@@ -1299,6 +1319,8 @@ function showView(id){
   if(id==='stats')renderStats();
   if(id==='history')renderHistory();
 }
+
+
 </script>
 </body>
 </html>
